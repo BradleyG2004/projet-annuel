@@ -1,27 +1,40 @@
 import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
-import { EvenementCategory } from "./evenement-category";
+import { Mission } from "./mission";
 
 @Entity({ name: "evenement" })
 export class Evenement {
     @PrimaryGeneratedColumn()
-    id: number
+    id: number;
 
     @Column()
-    name: string
+    type: string;
 
- 
+    @Column()
+    location: string;
 
-    @CreateDateColumn({type: "datetime"})
-    createdAt: Date
+    @Column()
+    description: string;
 
-    @ManyToOne(() => EvenementCategory, (evenementCategory) => evenementCategory.evenement)
-    category: EvenementCategory;
+    @Column()
+    quorum: number;
 
-    constructor(id: number, name: string, price: number, createdAt: Date, category: EvenementCategory) {
-        this.id = id
-        this.name = name
-       
-        this.createdAt = createdAt
-        this.category = category
+    @Column({ type: "datetime" })
+    starting: Date;
+
+    @Column({ type: "datetime" })
+    ending: Date;
+
+    @ManyToOne(() => Mission, (mission) => mission.evenements)
+    mission: Mission;
+
+    constructor(id: number, type: string, location: string, description: string, quorum: number, starting: Date, ending: Date, mission: Mission) {
+        this.id = id;
+        this.type = type;
+        this.location = location;
+        this.description = description;
+        this.quorum = quorum;
+        this.starting = starting;
+        this.ending = ending;
+        this.mission = mission;
     }
 }

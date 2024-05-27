@@ -1,5 +1,6 @@
 import { DataSource } from "typeorm";
 import { Evenement } from "../database/entities/evenement";
+import { Mission } from "../database/entities/mission";
 
 export interface ListEvenementFilter {
     limit: number;
@@ -7,17 +8,22 @@ export interface ListEvenementFilter {
 }
 
 export interface UpdateEvenementParams {
-    name?: string;
-    date?: Date;
+    type?: string;
+    location?: string;
+    description?: string;
+    quorum?: number;
+    starting?: Date;
+    ending?: Date;
+    missionId?: number;
 }
 
 export class EvenementUsecase {
     constructor(private readonly db: DataSource) { }
 
-    async listEvenement(listEvenementFilter: ListEvenementFilter): Promise<{ evenements: Evenement[]; totalCount: number; }> {
+    async listEvenements(filter: ListEvenementFilter): Promise<{ evenements: Evenement[]; totalCount: number; }> {
         const query = this.db.createQueryBuilder(Evenement, 'evenement')
-            .skip((listEvenementFilter.page - 1) * listEvenementFilter.limit)
-            .take(listEvenementFilter.limit);
+            .skip((filter.page - 1) * filter.limit)
+            .take(filter.limit);
 
         const [evenements, totalCount] = await query.getManyAndCount();
         return {
@@ -26,22 +32,18 @@ export class EvenementUsecase {
         };
     }
 
-    async updateEvenement(id: number, { name, date }: UpdateEvenementParams): Promise<Evenement | null> {
-        const repo = this.db.getRepository(Evenement);
-        const evenementFound = await repo.findOne({ where: { id } }); 
-        if (!evenementFound) return null;
-    
-        if (name) {
-            evenementFound.name = name;
+    async createEvenement(type: string, location: string, description: string, quorum: number, starting: Date, ending: Date, missionId: number): Promise<Evenement> {
+        const missionRepo = this.db.getRepository(Mission);
+        const mission = await missionRepo.findOne({ where: { id: missionId } });
+        if (!mission) {
+            throw new Error('Mission not found');
         }
-        if (date) {
-            evenementFound.createdAt = date;
-        }
-    
-        const updatedEvenement = await repo.save(evenementFound);
-        return updatedEvenement;
+
+        const evenementRepo = this.db.getRepository(Evenement);
+        const newEvenement = evenementRepo.create({ type, location, description, quorum, starting, ending, mission });
+        await evenementRepo.save(newEvenement);
+        return newEvenement;
     }
-    
 
     async getEvenement(id: number): Promise<Evenement | null> {
         const repo = this.db.getRepository(Evenement);
@@ -49,9 +51,32 @@ export class EvenementUsecase {
         return evenementFound || null;
     }
 
+    async updateEvenement(id: number, params: UpdateEvenementParams): Promise<Evenement | null> {
+        const repo = this.db.getRepository(Evenement);
+        const evenementFound = await repo.findOne({ where: { id } });
+        if (!evenementFound) return null;
+
+        if (params.type) evenementFound.type = params.type;
+        if (params.location) evenementFound.location = params.location;
+        if (params.description) evenementFound.description = params.description;
+        if (params.quorum) evenementFound.quorum = params.quorum;
+        if (params.starting) evenementFound.starting = params.starting;
+        if (params.ending) evenementFound.ending = params.ending;
+        if (params.missionId) {
+            const missionRepo = this.db.getRepository(Mission);
+            const mission = await missionRepo.findOne({ where: { id: params.missionId } });
+            if (mission) {
+                evenementFound.mission = mission;
+            }
+        }
+
+        const updatedEvenement = await repo.save(evenementFound);
+        return updatedEvenement;
+    }
+
     async deleteEvenement(id: number): Promise<boolean> {
         const repo = this.db.getRepository(Evenement);
-        const evenementFound =await repo.findOne({ where: { id } });
+        const evenementFound = await repo.findOne({ where: { id } });
         if (!evenementFound) return false;
 
         await repo.remove(evenementFound);
