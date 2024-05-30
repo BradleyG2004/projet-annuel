@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { Evenement } from "./evenement";
 import { Step } from "./step";
+import { Review } from "./review";
 
 @Entity({ name: "mission" })
 export class Mission {
@@ -19,14 +20,17 @@ export class Mission {
     @OneToMany(() => Evenement, (evenement) => evenement.mission)
     evenements!: Evenement[];
     
-    @OneToMany(() => Step, (step) => step.missions)
+    @OneToMany(() => Step, (step) => step.mission)
     steps: Step[];
-
-    constructor(id: number, starting: Date, ending: Date, description: string,steps:Step[]) {
+    @OneToMany(() => Review, (review) => review.mission)
+    reviews: Review[];
+    
+    constructor(id: number, starting: Date, ending: Date, description: string,steps:Step[], reviews:Review[]) {
         this.id = id;
         this.starting = starting;
         this.ending = ending;
         this.description = description;
         this.steps=steps
+        this.reviews = reviews
     }
 }

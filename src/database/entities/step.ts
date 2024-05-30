@@ -1,4 +1,4 @@
-import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Projet } from "./projet";
 import { Mission } from "./mission";
 
@@ -22,15 +22,16 @@ export class Step {
     @ManyToOne(() => Projet, (projet) => projet.steps)
     projet: Projet;
 
-    @OneToMany(() => Mission, (mission) => mission.steps)
-    missions: Mission[] = [];
+    @ManyToOne(() => Mission, (mission) => mission.steps)
+    mission: Mission;
 
-    constructor(id: number, state: string, description: string, starting: Date, ending: Date, projet: Projet) {
+    constructor(id: number, state: string, description: string, starting: Date, ending: Date, projet: Projet, mission: Mission) {
         this.id = id;
         this.state = state;
         this.description = description;
         this.starting = starting;
         this.ending = ending;
         this.projet = projet;
+        this.mission = mission;
     }
 }

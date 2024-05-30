@@ -5,6 +5,12 @@ import { MissionUsecase } from "../domain/mission-usecase";
 import { ListMissionRequest, MissionRequest, listMissionValidation, missionValidation } from "./validators/mission-validator";
 import { EvenementUsecase } from "../domain/evenement-usecase";
 import { EvenementRequest, ListEvenementRequest, evenementValidation } from "./validators/evenement-validator";
+import { ProjetUsecase } from "../domain/projet-usecase";
+import { ListProjetRequest, ProjetRequest, listProjetValidation, projetValidation } from "./validators/projet-validator";
+import { StepUsecase } from "../domain/step-usecase";
+import { ListStepRequest, StepRequest, listStepValidation, stepValidation } from "./validators/step-validator";
+import { ReviewUsecase } from "../domain/review-usecase";
+import { ReviewRequest, reviewValidation } from "./validators/review-validator";
 
 export const initRoutes = (app: express.Express) => {
          app.get("/health", (req: Request, res: Response) => {
@@ -13,7 +19,11 @@ export const initRoutes = (app: express.Express) => {
    
         const missionUsecase = new MissionUsecase(AppDataSource);
         const evenementUsecase = new EvenementUsecase(AppDataSource);
+        const projetUsecase = new ProjetUsecase(AppDataSource);
+        const stepUsecase = new StepUsecase(AppDataSource);
+        const reviewUsecase = new ReviewUsecase(AppDataSource);
 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
          app.post("/missions", async (req: Request, res: Response) => {
             const validation = missionValidation.validate(req.body);
             if (validation.error) {
@@ -185,5 +195,240 @@ export const initRoutes = (app: express.Express) => {
         });
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        app.post("/projets", async (req: Request, res: Response) => {
+            const validation = projetValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { description, starting, ending }: ProjetRequest = validation.value;
+            try {
+                const projetCreated = await projetUsecase.createProjet(description, starting, ending);
+                res.status(201).send(projetCreated);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.get("/projets/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const projet = await projetUsecase.getProjet(id);
+                if (!projet) {
+                    res.status(404).send({ error: "Projet not found" });
+                    return;
+                }
+                res.status(200).send(projet);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.put("/projets/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            const validation = projetValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { description, starting, ending }: ProjetRequest = validation.value;
+            try {
+                const projet = await projetUsecase.updateProjet(id, { description, starting, ending });
+                if (!projet) {
+                    res.status(404).send({ error: "Projet not found" });
+                    return;
+                }
+                res.status(200).send(projet);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.delete("/projets/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const success = await projetUsecase.deleteProjet(id);
+                if (!success) {
+                    res.status(404).send({ error: "Projet not found" });
+                    return;
+                }
+                res.status(204).send();
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.get("/projets", async (req: Request, res: Response) => {
+            const validation = listProjetValidation.validate(req.query);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { page = 1, limit = 10 }: ListProjetRequest = validation.value;
+            try {
+                const result = await projetUsecase.listProjets({ page, limit });
+                res.status(200).send(result);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+    
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+            app.post("/steps", async (req: Request, res: Response) => {
+                const validation = stepValidation.validate(req.body);
+                if (validation.error) {
+                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                    return;
+                }
+        
+                const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
+                try {
+                    const stepCreated = await stepUsecase.createStep(state, description, starting, ending, projetId, missionId);
+                    res.status(201).send(stepCreated);
+                } catch (error) {
+                    console.log(error);
+                    res.status(500).send({ error: "Internal error" });
+                }
+            });
+            app.get("/steps/:id", async (req: Request, res: Response) => {
+                const id = parseInt(req.params.id);
+                try {
+                    const step = await stepUsecase.getStep(id);
+                    if (!step) {
+                        res.status(404).send({ error: "Step not found" });
+                        return;
+                    }
+                    res.status(200).send(step);
+                } catch (error) {
+                    console.log(error);
+                    res.status(500).send({ error: "Internal error" });
+                }
+            });
+            app.put("/steps/:id", async (req: Request, res: Response) => {
+                const id = parseInt(req.params.id);
+                const validation = stepValidation.validate(req.body);
+                if (validation.error) {
+                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                    return;
+                }
+        
+                const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
+                try {
+                    const step = await stepUsecase.updateStep(id, { state, description, starting, ending, projetId, missionId });
+                    if (!step) {
+                        res.status(404).send({ error: "Step not found" });
+                        return;
+                    }
+                    res.status(200).send(step);
+                } catch (error) {
+                    console.log(error);
+                    res.status(500).send({ error: "Internal error" });
+                }
+            });
+            app.delete("/steps/:id", async (req: Request, res: Response) => {
+                const id = parseInt(req.params.id);
+                try {
+                    const success = await stepUsecase.deleteStep(id);
+                    if (!success) {
+                        res.status(404).send({ error: "Step not found" });
+                        return;
+                    }
+                    res.status(204).send();
+                } catch (error) {
+                    console.log(error);
+                    res.status(500).send({ error: "Internal error" });
+                }
+            });
+        
+            app.get("/steps", async (req: Request, res: Response) => {
+                const validation = listStepValidation.validate(req.query);
+                if (validation.error) {
+                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                    return;
+                }
+        
+                const { page = 1, limit = 10 }: ListStepRequest = validation.value;
+                try {
+                    const result = await stepUsecase.listSteps({ page, limit });
+                    res.status(200).send(result);
+                } catch (error) {
+                    console.log(error);
+                    res.status(500).send({ error: "Internal error" });
+                }
+            });
+        
+          ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}
+            
+          app.post("/comments", async (req: Request, res: Response) => {
+            const validation = reviewValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { content, createdAt, missionId, userId }: ReviewRequest = validation.value;
+            try {
+                const reviewCreated = await reviewUsecase.createReview(content, createdAt, missionId, userId);
+                res.status(201).send(reviewCreated);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+    
+        app.get("/comments/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const review = await reviewUsecase.getReview(id);
+                if (!review) {
+                    res.status(404).send({ error: "Review not found" });
+                    return;
+                }
+                res.status(200).send(review);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.put("/comments/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            const validation = reviewValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { content }: ReviewRequest = validation.value;
+            try {
+                const review = await reviewUsecase.updateReview(id, { content });
+                if (!review) {
+                    res.status(404).send({ error: "Review not found" });
+                    return;
+                }
+                res.status(200).send(review);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+
+        app.delete("/comments/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const success = await reviewUsecase.deleteReview(id);
+                if (!success) {
+                    res.status(404).send({ error: "Review not found" });
+                    return;
+                }
+                res.status(204).send();
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+    }
