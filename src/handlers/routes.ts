@@ -11,6 +11,8 @@ import { StepUsecase } from "../domain/step-usecase";
 import { ListStepRequest, StepRequest, listStepValidation, stepValidation } from "./validators/step-validator";
 import { ReviewUsecase } from "../domain/review-usecase";
 import { ReviewRequest, reviewValidation } from "./validators/review-validator";
+import { ComplianceUsecase } from "../domain/compliance-usecase";
+import { ComplianceRequest, ListComplianceRequest, complianceValidation, listComplianceValidation } from "./validators/compliance-validator";
 
 export const initRoutes = (app: express.Express) => {
          app.get("/health", (req: Request, res: Response) => {
@@ -22,6 +24,7 @@ export const initRoutes = (app: express.Express) => {
         const projetUsecase = new ProjetUsecase(AppDataSource);
         const stepUsecase = new StepUsecase(AppDataSource);
         const reviewUsecase = new ReviewUsecase(AppDataSource);
+        const complianceUsecase = new ComplianceUsecase(AppDataSource);
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
          app.post("/missions", async (req: Request, res: Response) => {
@@ -431,4 +434,92 @@ export const initRoutes = (app: express.Express) => {
                 res.status(500).send({ error: "Internal error" });
             }
         });
+
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        app.post("/compliances", async (req: Request, res: Response) => {
+            const validation = complianceValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { description, status, userId, missionId }: ComplianceRequest = validation.value;
+            try {
+                const complianceCreated = await complianceUsecase.createCompliance(description, status, userId, missionId);
+                res.status(201).send(complianceCreated);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.get("/compliances/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const compliance = await complianceUsecase.getCompliance(id);
+                if (!compliance) {
+                    res.status(404).send({ error: "Compliance not found" });
+                    return;
+                }
+                res.status(200).send(compliance);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.put("/compliances/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            const validation = complianceValidation.validate(req.body);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { description, status }: ComplianceRequest = validation.value;
+            try {
+                const compliance = await complianceUsecase.updateCompliance(id, { description, status });
+                if (!compliance) {
+                    res.status(404).send({ error: "Compliance not found" });
+                    return;
+                }
+                res.status(200).send(compliance);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+        app.delete("/compliances/:id", async (req: Request, res: Response) => {
+            const id = parseInt(req.params.id);
+            try {
+                const success = await complianceUsecase.deleteCompliance(id);
+                if (!success) {
+                    res.status(404).send({ error: "Compliance not found" });
+                    return;
+                }
+                res.status(204).send();
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+    
+        app.get("/compliances", async (req: Request, res: Response) => {
+            const validation = listComplianceValidation.validate(req.query);
+            if (validation.error) {
+                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+                return;
+            }
+    
+            const { page = 1, limit = 10 }: ListComplianceRequest = validation.value;
+            try {
+                const result = await complianceUsecase.listCompliances({ page, limit });
+                res.status(200).send(result);
+            } catch (error) {
+                console.log(error);
+                res.status(500).send({ error: "Internal error" });
+            }
+        });
+    
+    
+
     }
