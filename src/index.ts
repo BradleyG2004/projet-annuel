@@ -1,32 +1,20 @@
 import express from "express";
-import { Express } from "express-serve-static-core";
-import { AppDataSource } from "./database/database";
+import { initRoutes } from "./handlers/routes";
+ 
+import { AppDataSource } from './database/database';
  
 
+const app = express();
+const port = process.env.PORT || 3000;
 
-const main = async () => {
-    const app = express()
-    const port = 3000
-
-    try {
-
-        await AppDataSource.initialize()
-        console.error("well connected to database")
-    } catch (error) {
-        console.log(error)
-        console.error("Cannot contact database")
-        process.exit(1)
-    }
-
-    app.use(express.json())
-    initRoutes(app)
-    app.listen(port, () => {
-        console.log(`Server running on port ${port}`)
+AppDataSource.initialize()
+    .then(() => {
+        console.log('well connected to database');
+        initRoutes(app);
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
     })
-}
-
-main()
-
-function initRoutes(app: Express) {
-    throw new Error("Function not implemented.");
-}
+    .catch((error) => {
+        console.error('Error during Data Source initialization:', error);
+    });

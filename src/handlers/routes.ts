@@ -1,6 +1,6 @@
 import express, { Request, Response } from "express";
 import { AppDataSource } from "../database/database";
-import { generateValidationErrorMessage } from "./validators/generate-validation-message.ts";
+import { generateValidationErrorMessage } from "./validators/generate-validation-message";
 import { MissionUsecase } from "../domain/mission-usecase";
 import { ListMissionRequest, MissionRequest, listMissionValidation, missionValidation } from "./validators/mission-validator";
 import { EvenementUsecase } from "../domain/evenement-usecase";
@@ -13,513 +13,1258 @@ import { ReviewUsecase } from "../domain/review-usecase";
 import { ReviewRequest, reviewValidation } from "./validators/review-validator";
 import { ComplianceUsecase } from "../domain/compliance-usecase";
 import { ComplianceRequest, ListComplianceRequest, complianceValidation, listComplianceValidation } from "./validators/compliance-validator";
+import { compare, hash } from "bcrypt";
+import { createOtherValidation, listUsersValidation, loginOtherValidation, updateUserValidation, userIdValidation } from "./validators/user-validator";
+import { User } from "../database/entities/user";
+import { Status } from "../database/entities/status";
+import { createStatusValidation } from "./validators/status-validator";
+import { sign } from "jsonwebtoken";
+import { Token } from "../database/entities/token";
+import { createAdminValidation } from "./validators/user-validator";
+import { UserUsecase } from "../domain/user-usecase";
+import { normalMiddleware } from "./middleware/normal-middleware";
+import { adminMiddleware } from "./middleware/admin-middleware";
+import { authMiddleware } from "./middleware/combMiddleware";
+import { Donation } from "../database/entities/donation";
+import { benefactorMiddleware } from "./middleware/benefactor-middleware";
+import { createDonationValidation } from "./validators/donation-validator";
+import { Expenditures } from "../database/entities/expenditure";
+import { ExpenditureUsecase } from "../domain/expenditure-usecase";
+import { listExpendituresValidation } from "./validators/expenditure-validator";
+const paypal = require("./paypal");
 
 export const initRoutes = (app: express.Express) => {
-         app.get("/health", (req: Request, res: Response) => {
-            res.send({ "message": "hello world" })
-        })
-   
-        const missionUsecase = new MissionUsecase(AppDataSource);
-        const evenementUsecase = new EvenementUsecase(AppDataSource);
-        const projetUsecase = new ProjetUsecase(AppDataSource);
-        const stepUsecase = new StepUsecase(AppDataSource);
-        const reviewUsecase = new ReviewUsecase(AppDataSource);
-        const complianceUsecase = new ComplianceUsecase(AppDataSource);
+    app.get("/health", (req: Request, res: Response) => {
+        res.send({ "message": "hello world" });
+    });
 
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-         app.post("/missions", async (req: Request, res: Response) => {
-            const validation = missionValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { starting, ending, description }: MissionRequest = validation.value;
-            try {
-                const missionCreated = await missionUsecase.createMission(starting, ending, description);
-                res.status(201).send(missionCreated);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/missions/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const mission = await missionUsecase.getMission(id);
-                if (!mission) {
-                    res.status(404).send({ error: "Mission not found" });
-                    return;
-                }
-                res.status(200).send(mission);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-    
-        app.put("/missions/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            const validation = missionValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { starting, ending, description }: MissionRequest = validation.value;
-            try {
-                const mission = await missionUsecase.updateMission(id, { starting, ending, description });
-                if (!mission) {
-                    res.status(404).send({ error: "Mission not found" });
-                    return;
-                }
-                res.status(200).send(mission);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-    
-        app.delete("/missions/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const success = await missionUsecase.deleteMission(id);
-                if (!success) {
-                    res.status(404).send({ error: "Mission not found" });
-                    return;
-                }
-                res.status(204).send();
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-    
-        app.get("/missions", async (req: Request, res: Response) => {
-            const validation = listMissionValidation.validate(req.query);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { page = 1, limit = 10 }: ListMissionRequest = validation.value;
-            try {
-                const result = await missionUsecase.listMissions({ page, limit });
-                res.status(200).send(result);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
+    const missionUsecase = new MissionUsecase(AppDataSource);
+    const evenementUsecase = new EvenementUsecase(AppDataSource);
+    const projetUsecase = new ProjetUsecase(AppDataSource);
+    const stepUsecase = new StepUsecase(AppDataSource);
+    const reviewUsecase = new ReviewUsecase(AppDataSource);
+    const complianceUsecase = new ComplianceUsecase(AppDataSource);
 
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Missions Routes
+    app.post("/missions", async (req: Request, res: Response) => {
+        const validation = missionValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
 
-        // Routes for Evenement
-        app.post("/evenements", async (req: Request, res: Response) => {
-            const validation = evenementValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { type, location, description, quorum, starting, ending, missionId }: EvenementRequest = validation.value;
-            try {
-                const evenementCreated = await evenementUsecase.createEvenement(type, location, description, quorum, starting, ending, missionId);
-                res.status(201).send(evenementCreated);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/evenements/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const evenement = await evenementUsecase.getEvenement(id);
-                if (!evenement) {
-                    res.status(404).send({ error: "Evenement not found" });
-                    return;
-                }
-                res.status(200).send(evenement);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.put("/evenements/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            const validation = evenementValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { type, location, description, quorum, starting, ending, missionId }: EvenementRequest = validation.value;
-            try {
-                const evenement = await evenementUsecase.updateEvenement(id, { type, location, description, quorum, starting, ending, missionId });
-                if (!evenement) {
-                    res.status(404).send({ error: "Evenement not found" });
-                    return;
-                }
-                res.status(200).send(evenement);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });    
-        app.delete("/evenements/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const success = await evenementUsecase.deleteEvenement(id);
-                if (!success) {
-                    res.status(404).send({ error: "evenement not found" });
-                    return;
-                }
-                res.status(204).send();
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/evenements", async (req: Request, res: Response) => {
-            const validation = listMissionValidation.validate(req.query);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                return;
-            }
-    
-            const { page = 1, limit = 10 }: ListEvenementRequest = validation.value;
-            try {
-                const result = await evenementUsecase.listEvenements({ page, limit });
-                res.status(200).send(result);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
+        const { starting, ending, description }: MissionRequest = validation.value;
+        try {
+            const missionCreated = await missionUsecase.createMission(starting, ending, description);
+            res.status(201).send(missionCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
 
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        app.post("/projets", async (req: Request, res: Response) => {
-            const validation = projetValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+    app.get("/missions/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const mission = await missionUsecase.getMission(id);
+            if (!mission) {
+                res.status(404).send({ error: "Mission not found" });
                 return;
             }
-    
-            const { description, starting, ending }: ProjetRequest = validation.value;
-            try {
-                const projetCreated = await projetUsecase.createProjet(description, starting, ending);
-                res.status(201).send(projetCreated);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/projets/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const projet = await projetUsecase.getProjet(id);
-                if (!projet) {
-                    res.status(404).send({ error: "Projet not found" });
-                    return;
-                }
-                res.status(200).send(projet);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.put("/projets/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            const validation = projetValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            res.status(200).send(mission);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/missions/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = missionValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { starting, ending, description }: MissionRequest = validation.value;
+        try {
+            const mission = await missionUsecase.updateMission(id, { starting, ending, description });
+            if (!mission) {
+                res.status(404).send({ error: "Mission not found" });
                 return;
             }
-    
-            const { description, starting, ending }: ProjetRequest = validation.value;
-            try {
-                const projet = await projetUsecase.updateProjet(id, { description, starting, ending });
-                if (!projet) {
-                    res.status(404).send({ error: "Projet not found" });
-                    return;
-                }
-                res.status(200).send(projet);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.delete("/projets/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const success = await projetUsecase.deleteProjet(id);
-                if (!success) {
-                    res.status(404).send({ error: "Projet not found" });
-                    return;
-                }
-                res.status(204).send();
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/projets", async (req: Request, res: Response) => {
-            const validation = listProjetValidation.validate(req.query);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            res.status(200).send(mission);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/missions/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await missionUsecase.deleteMission(id);
+            if (!success) {
+                res.status(404).send({ error: "Mission not found" });
                 return;
             }
-    
-            const { page = 1, limit = 10 }: ListProjetRequest = validation.value;
-            try {
-                const result = await projetUsecase.listProjets({ page, limit });
-                res.status(200).send(result);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/missions", async (req: Request, res: Response) => {
+        const validation = listMissionValidation.validate(req.query);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { page = 1, limit = 10 }: ListMissionRequest = validation.value;
+        try {
+            const result = await missionUsecase.listMissions({ page, limit });
+            res.status(200).send(result);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // Evenement Routes
+    app.post("/evenements", async (req: Request, res: Response) => {
+        const validation = evenementValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { type, location, description, quorum, starting, ending, missionId }: EvenementRequest = validation.value;
+        try {
+            const evenementCreated = await evenementUsecase.createEvenement(type, location, description, quorum, starting, ending, missionId);
+            res.status(201).send(evenementCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/evenements/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const evenement = await evenementUsecase.getEvenement(id);
+            if (!evenement) {
+                res.status(404).send({ error: "Evenement not found" });
+                return;
             }
-        });
-    
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-            app.post("/steps", async (req: Request, res: Response) => {
-                const validation = stepValidation.validate(req.body);
-                if (validation.error) {
-                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                    return;
-                }
-        
-                const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
-                try {
-                    const stepCreated = await stepUsecase.createStep(state, description, starting, ending, projetId, missionId);
-                    res.status(201).send(stepCreated);
-                } catch (error) {
-                    console.log(error);
-                    res.status(500).send({ error: "Internal error" });
+            res.status(200).send(evenement);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/evenements/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = evenementValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { type, location, description, quorum, starting, ending, missionId }: EvenementRequest = validation.value;
+        try {
+            const evenement = await evenementUsecase.updateEvenement(id, { type, location, description, quorum, starting, ending, missionId });
+            if (!evenement) {
+                res.status(404).send({ error: "Evenement not found" });
+                return;
+            }
+            res.status(200).send(evenement);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/evenements/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await evenementUsecase.deleteEvenement(id);
+            if (!success) {
+                res.status(404).send({ error: "Evenement not found" });
+                return;
+            }
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/evenements", async (req: Request, res: Response) => {
+        const validation = listMissionValidation.validate(req.query);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { page = 1, limit = 10 }: ListEvenementRequest = validation.value;
+        try {
+            const result = await evenementUsecase.listEvenements({ page, limit });
+            res.status(200).send(result);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // Projets Routes
+    app.post("/projets", async (req: Request, res: Response) => {
+        const validation = projetValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { description, starting, ending }: ProjetRequest = validation.value;
+        try {
+            const projetCreated = await projetUsecase.createProjet(description, starting, ending);
+            res.status(201).send(projetCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/projets/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const projet = await projetUsecase.getProjet(id);
+            if (!projet) {
+                res.status(404).send({ error: "Projet not found" });
+                return;
+            }
+            res.status(200).send(projet);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/projets/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = projetValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { description, starting, ending }: ProjetRequest = validation.value;
+        try {
+            const projet = await projetUsecase.updateProjet(id, { description, starting, ending });
+            if (!projet) {
+                res.status(404).send({ error: "Projet not found" });
+                return;
+            }
+            res.status(200).send(projet);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/projets/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await projetUsecase.deleteProjet(id);
+            if (!success) {
+                res.status(404).send({ error: "Projet not found" });
+                return;
+            }
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/projets", async (req: Request, res: Response) => {
+        const validation = listProjetValidation.validate(req.query);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { page = 1, limit = 10 }: ListProjetRequest = validation.value;
+        try {
+            const result = await projetUsecase.listProjets({ page, limit });
+            res.status(200).send(result);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // Steps Routes
+    app.post("/steps", async (req: Request, res: Response) => {
+        const validation = stepValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
+        try {
+            const stepCreated = await stepUsecase.createStep(state, description, starting, ending, projetId, missionId);
+            res.status(201).send(stepCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/steps/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const step = await stepUsecase.getStep(id);
+            if (!step) {
+                res.status(404).send({ error: "Step not found" });
+                return;
+            }
+            res.status(200).send(step);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/steps/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = stepValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
+        try {
+            const step = await stepUsecase.updateStep(id, { state, description, starting, ending, projetId, missionId });
+            if (!step) {
+                res.status(404).send({ error: "Step not found" });
+                return;
+            }
+            res.status(200).send(step);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/steps/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await stepUsecase.deleteStep(id);
+            if (!success) {
+                res.status(404).send({ error: "Step not found" });
+                return;
+            }
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/steps", async (req: Request, res: Response) => {
+        const validation = listStepValidation.validate(req.query);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { page = 1, limit = 10 }: ListStepRequest = validation.value;
+        try {
+            const result = await stepUsecase.listSteps({ page, limit });
+            res.status(200).send(result);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // Comments (Reviews) Routes
+    app.post("/comments", async (req: Request, res: Response) => {
+        const validation = reviewValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { content, createdAt, missionId, userId }: ReviewRequest = validation.value;
+        try {
+            const reviewCreated = await reviewUsecase.createReview(content, createdAt, missionId, userId);
+            res.status(201).send(reviewCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/comments/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const review = await reviewUsecase.getReview(id);
+            if (!review) {
+                res.status(404).send({ error: "Review not found" });
+                return;
+            }
+            res.status(200).send(review);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/comments/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = reviewValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { content }: ReviewRequest = validation.value;
+        try {
+            const review = await reviewUsecase.updateReview(id, { content });
+            if (!review) {
+                res.status(404).send({ error: "Review not found" });
+                return;
+            }
+            res.status(200).send(review);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/comments/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await reviewUsecase.deleteReview(id);
+            if (!success) {
+                res.status(404).send({ error: "Review not found" });
+                return;
+            }
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // Compliances Routes
+    app.post("/compliances", async (req: Request, res: Response) => {
+        const validation = complianceValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { description, status, userId, missionId }: ComplianceRequest = validation.value;
+        try {
+            const complianceCreated = await complianceUsecase.createCompliance(description, status, userId, missionId);
+            res.status(201).send(complianceCreated);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/compliances/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const compliance = await complianceUsecase.getCompliance(id);
+            if (!compliance) {
+                res.status(404).send({ error: "Compliance not found" });
+                return;
+            }
+            res.status(200).send(compliance);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.put("/compliances/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        const validation = complianceValidation.validate(req.body);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { description, status }: ComplianceRequest = validation.value;
+        try {
+            const compliance = await complianceUsecase.updateCompliance(id, { description, status });
+            if (!compliance) {
+                res.status(404).send({ error: "Compliance not found" });
+                return;
+            }
+            res.status(200).send(compliance);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/compliances/:id", async (req: Request, res: Response) => {
+        const id = parseInt(req.params.id);
+        try {
+            const success = await complianceUsecase.deleteCompliance(id);
+            if (!success) {
+                res.status(404).send({ error: "Compliance not found" });
+                return;
+            }
+            res.status(204).send();
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    app.get("/compliances", async (req: Request, res: Response) => {
+        const validation = listComplianceValidation.validate(req.query);
+        if (validation.error) {
+            res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const { page = 1, limit = 10 }: ListComplianceRequest = validation.value;
+        try {
+            const result = await complianceUsecase.listCompliances({ page, limit });
+            res.status(200).send(result);
+        } catch (error) {
+            console.log(error);
+            res.status(500).send({ error: "Internal error" });
+        }
+    });
+
+    // User Management Routes
+    app.get('/users', authMiddleware, async (req: Request, res: Response) => {
+        const validation = listUsersValidation.validate(req.query);
+
+        if (validation.error) {
+            res.status(400).json(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const listUserRequest = validation.value;
+        let limit = 10;
+        if (listUserRequest.limit) {
+            limit = listUserRequest.limit;
+        }
+
+        let type = "";
+        if (listUserRequest.type) {
+            type = listUserRequest.type;
+        }
+
+        const page = listUserRequest.page ?? 1;
+
+        try {
+            const userUsecase = new UserUsecase(AppDataSource);
+            const listusers = await userUsecase.listUser({ ...listUserRequest, page, limit, type });
+            res.status(200).json(listusers);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.get("/users/:id", authMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = userIdValidation.validate(req.params);
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const userId = validationResult.value;
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOneBy({ id: userId.id, isDeleted: false });
+            if (user === null) {
+                res.status(404).json({ "error": `user ${userId.id} not found` });
+                return;
+            }
+            res.status(200).json(user);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.post('/expenditure', adminMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = createDonationValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const createDonationRequest = validationResult.value;
+
+            const authHeader = req.headers['authorization'];
+            if (!authHeader) return res.status(401).json({ "error": "Unauthorized" });
+
+            const token = authHeader.split(' ')[1];
+            if (token === null) return res.status(401).json({ "error": "Unauthorized" });
+
+            const tokenRepo = AppDataSource.getRepository(Token);
+            const tokenFound = await tokenRepo.findOne({ where: { token }, relations: ['user'] });
+
+            if (!tokenFound) {
+                return res.status(403).json({ "error": "Access Forbidden" });
+            }
+
+            if (!tokenFound.user) {
+                return res.status(500).json({ "error": "Internal server error u" });
+            }
+
+            const userRepo = AppDataSource.getRepository(User);
+            const userFound = await userRepo.findOne({ where: { id: tokenFound.user.id } });
+
+            if (!userFound) {
+                return res.status(500).json({ "error": "Internal server error stat " });
+            }
+
+            const expenditureRepository = AppDataSource.getRepository(Expenditures);
+            const newExpenditure = expenditureRepository.create({
+                amount: createDonationRequest.amount,
+                user: userFound,
+                description: createDonationRequest.description
+            });
+
+            await expenditureRepository.save(newExpenditure);
+
+            if (await paypal.createPayout(createDonationRequest.amount, 'EUR')) {
+                res.status(200).json({
+                    message: "Expenditure successfully registered and the amount of " + createDonationRequest.amount + "€ has been transfered",
+                    CheckThemAllHere: "http:localhost:3000/expenditures"
+                });
+            }
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.get('/expenditures', adminMiddleware, async (req: Request, res: Response) => {
+        const validation = listExpendituresValidation.validate(req.query);
+
+        if (validation.error) {
+            res.status(400).json(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+
+        const listExpenditureRequest = validation.value;
+        let limit = 10;
+        if (listExpenditureRequest.limit) {
+            limit = listExpenditureRequest.limit;
+        }
+
+        let id = 0;
+        if (listExpenditureRequest.id) {
+            id = listExpenditureRequest.id;
+        }
+
+        const page = listExpenditureRequest.page ?? 1;
+
+        try {
+            const expenditureUsecase = new ExpenditureUsecase(AppDataSource);
+            const listusers = await expenditureUsecase.listExpenditure({ ...listExpenditureRequest, page, limit, id });
+            res.status(200).json(listusers);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.get("/expenditures/:id", adminMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = userIdValidation.validate(req.params);
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const expenditureId = validationResult.value;
+
+            const userRepository = AppDataSource.getRepository(Expenditures);
+            const user = await userRepository.findOneBy({ id: expenditureId.id });
+            if (user === null) {
+                res.status(404).json({ "error": `Expenditure ${expenditureId.id} not found` });
+                return;
+            }
+            res.status(200).json(user);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.post('/Donation', benefactorMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = createDonationValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const createDonationRequest = validationResult.value;
+
+            const authHeader = req.headers['authorization'];
+            if (!authHeader) return res.status(401).json({ "error": "Unauthorized" });
+
+            const token = authHeader.split(' ')[1];
+            if (token === null) return res.status(401).json({ "error": "Unauthorized" });
+
+            const tokenRepo = AppDataSource.getRepository(Token);
+            const tokenFound = await tokenRepo.findOne({ where: { token }, relations: ['user'] });
+
+            if (!tokenFound) {
+                return res.status(403).json({ "error": "Access Forbidden" });
+            }
+
+            if (!tokenFound.user) {
+                return res.status(500).json({ "error": "Internal server error u" });
+            }
+
+            const userRepo = AppDataSource.getRepository(User);
+            const userFound = await userRepo.findOne({ where: { id: tokenFound.user.id } });
+
+            if (!userFound) {
+                return res.status(500).json({ "error": "Internal server error stat " });
+            }
+
+            const donationRepository = AppDataSource.getRepository(Donation);
+            const newDonation = donationRepository.create({
+                amount: createDonationRequest.amount,
+                description: createDonationRequest.description,
+                remaining: createDonationRequest.amount,
+                benefactor: userFound
+            });
+
+            await donationRepository.save(newDonation);
+
+            const url = await paypal.createOrder(createDonationRequest.description, createDonationRequest.amount);
+            res.status(200).json({ message: "open this on your current navigator: " + url });
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.get('/validateDonation', async (req: Request, res: Response) => {
+        try {
+            await paypal.capturePayment(req.query.token);
+
+            res.status(200).json({
+                message: "Donation perfectly done",
+                CheckThemAllHeres: "http:localhost:3000/donations"
+            });
+        } catch (error) {
+            res.send("Error: " + error);
+        }
+    });
+
+    app.get('/cancelDonation', async (req: Request, res: Response) => {
+        try {
+            const donationRepository = AppDataSource.getRepository(Donation);
+
+            const latestDonation = await donationRepository.findOne({
+                where: {
+                    isCanceled: false
+                },
+                order: {
+                    createdAt: 'DESC'
                 }
             });
-            app.get("/steps/:id", async (req: Request, res: Response) => {
-                const id = parseInt(req.params.id);
-                try {
-                    const step = await stepUsecase.getStep(id);
-                    if (!step) {
-                        res.status(404).send({ error: "Step not found" });
-                        return;
-                    }
-                    res.status(200).send(step);
-                } catch (error) {
-                    console.log(error);
-                    res.status(500).send({ error: "Internal error" });
-                }
+            if (latestDonation) {
+                latestDonation.isCanceled = true;
+                await donationRepository.save(latestDonation);
+            }
+            res.status(200).json({
+                message: "Donation successfully canceled",
+                CheckThemAllHeres: "http:localhost:3000/donations"
             });
-            app.put("/steps/:id", async (req: Request, res: Response) => {
-                const id = parseInt(req.params.id);
-                const validation = stepValidation.validate(req.body);
-                if (validation.error) {
-                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                    return;
-                }
-        
-                const { state, description, starting, ending, projetId, missionId }: StepRequest = validation.value;
-                try {
-                    const step = await stepUsecase.updateStep(id, { state, description, starting, ending, projetId, missionId });
-                    if (!step) {
-                        res.status(404).send({ error: "Step not found" });
-                        return;
-                    }
-                    res.status(200).send(step);
-                } catch (error) {
-                    console.log(error);
-                    res.status(500).send({ error: "Internal error" });
-                }
+        } catch (error) {
+            res.send("Error: " + error);
+        }
+    });
+
+    app.get('/donations', async (req: Request, res: Response) => {
+        const query = AppDataSource.getRepository(Donation)
+            .createQueryBuilder('donation')
+            .where('donation.isCanceled= false');
+        const [donation, totalCount] = await query.getManyAndCount();
+        res.status(200).json({
+            donation,
+            totalCount
+        });
+    });
+
+    app.get("/donations/:id", async (req: Request, res: Response) => {
+        try {
+            const validationResult = userIdValidation.validate(req.params);
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const expenditureId = validationResult.value;
+
+            const userRepository = AppDataSource.getRepository(Donation);
+            const user = await userRepository.findOneBy({ id: expenditureId.id, isCanceled: false });
+            if (user === null) {
+                res.status(404).json({ "error": `Donation ${expenditureId.id} not found` });
+                return;
+            }
+            res.status(200).json(user);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.post('/signup', async (req: Request, res: Response) => {
+        try {
+            const validationResult = createOtherValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const createOtherRequest = validationResult.value;
+            const hashedPassword = await hash(createOtherRequest.password, 10);
+
+            const userRepository = AppDataSource.getRepository(User);
+            const status = await AppDataSource
+                .getRepository(Status)
+                .createQueryBuilder("status")
+                .where("status.description = \"NORMAL\"")
+                .getOne();
+            if (status != null) {
+                const other = await userRepository.save({
+                    name: createOtherRequest.name,
+                    email: createOtherRequest.email,
+                    password: hashedPassword,
+                    status: status
+                });
+                res.status(201).json(other);
+            } else {
+                return res.status(201).json({ "Erreur": "So you are coming out of nowhere" });
+            }
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
+    app.post('/login', async (req: Request, res: Response) => {
+        try {
+            const validationResult = loginOtherValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const loginOtherRequest = validationResult.value;
+
+            const other = await AppDataSource.getRepository(User).findOne({
+                where: {
+                    email: loginOtherRequest.email,
+                    isDeleted: false
+                },
+                relations: ["status"]
             });
-            app.delete("/steps/:id", async (req: Request, res: Response) => {
-                const id = parseInt(req.params.id);
-                try {
-                    const success = await stepUsecase.deleteStep(id);
-                    if (!success) {
-                        res.status(404).send({ error: "Step not found" });
-                        return;
-                    }
-                    res.status(204).send();
-                } catch (error) {
-                    console.log(error);
-                    res.status(500).send({ error: "Internal error" });
-                }
+
+            if (!other) {
+                res.status(400).json({ error: "user not found" });
+                return;
+            }
+
+            const isValid = await compare(loginOtherRequest.password, other.password);
+            if (!isValid) {
+                res.status(400).json({ error: "email or password not valid" });
+                return;
+            }
+
+            const status = await AppDataSource.getRepository(Status).findOneBy({
+                id: other.status.id
             });
-        
-            app.get("/steps", async (req: Request, res: Response) => {
-                const validation = listStepValidation.validate(req.query);
-                if (validation.error) {
-                    res.status(400).send(generateValidationErrorMessage(validation.error.details));
-                    return;
-                }
-        
-                const { page = 1, limit = 10 }: ListStepRequest = validation.value;
-                try {
-                    const result = await stepUsecase.listSteps({ page, limit });
-                    res.status(200).send(result);
-                } catch (error) {
-                    console.log(error);
-                    res.status(500).send({ error: "Internal error" });
-                }
+
+            if (!status || (status && status.description != "NORMAL")) {
+                res.status(400).json({ error: "user not recognised" });
+                return;
+            }
+
+            const secret = process.env.JWT_SECRET ?? "NoNotThis";
+            const token = sign({ otherId: other.id, email: other.email }, secret, { expiresIn: '1d' });
+            await AppDataSource.getRepository(Token).save({ token: token, user: other });
+            res.status(200).json({ other, token, message: "authenticated ✅" });
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
+    app.patch("/users/:id", normalMiddleware, async (req: Request, res: Response) => {
+        const validation = updateUserValidation.validate({ ...req.body, ...req.params });
+
+        if (validation.error) {
+            res.status(400).json(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+        const updateUserRequest = validation.value;
+
+        try {
+            const userUsecase = new UserUsecase(AppDataSource);
+            const updatedUser = await userUsecase.updateUser(updateUserRequest.id, { ...updateUserRequest });
+            if (updatedUser === null) {
+                res.status(404).json({ "error": `user ${updateUserRequest.id} not found` });
+                return;
+            }
+            res.status(200).json(updatedUser);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/users/:id", authMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = updateUserValidation.validate({ ...req.params, ...req.body });
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+
+            const userProto = validationResult.value;
+            const userRepository = AppDataSource.getRepository(User);
+
+            const user = await userRepository.findOneBy({ id: userProto.id, isDeleted: false });
+            if (!user) {
+                res.status(404).json({ error: `User ${userProto.id} not found` });
+                return;
+            }
+
+            const isValid = await compare(userProto.actual_password, user.password);
+
+            if (!isValid) {
+                res.status(400).json({ error: "Actual password incorrect" });
+                return;
+            }
+
+            user.isDeleted = true;
+            const userDeleted = await userRepository.save(user);
+            res.status(200).json(userDeleted);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    // Admin Routes
+    app.post('/admin/signup', async (req: Request, res: Response) => {
+        try {
+            const validationResult = createAdminValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const createOtherRequest = validationResult.value;
+            const hashedPassword = await hash(createOtherRequest.password, 10);
+
+            const status = await AppDataSource.getRepository(Status)
+                .createQueryBuilder("status")
+                .where("status.description = :description", { description: "ADMIN" })
+                .getOne();
+
+            if (!status) {
+                res.status(500).json({ error: "Status not found" });
+                return;
+            }
+
+            if (!createOtherRequest.key) {
+                res.status(400).json({ error: "Key is required" });
+                return;
+            }
+
+            const isKeyValid = await compare(createOtherRequest.key, status.key);
+            if (!isKeyValid) {
+                res.status(400).json({ error: "Invalid key" });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const newUser = userRepository.create({
+                name: createOtherRequest.name,
+                email: createOtherRequest.email,
+                password: hashedPassword,
+                status: status
             });
-        
-          ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-            
-          app.post("/comments", async (req: Request, res: Response) => {
-            const validation = reviewValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            await userRepository.save(newUser);
+
+            res.status(201).json(newUser);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
+    app.post('/admin/login', async (req: Request, res: Response) => {
+        try {
+            const validationResult = loginOtherValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
                 return;
             }
-    
-            const { content, createdAt, missionId, userId }: ReviewRequest = validation.value;
-            try {
-                const reviewCreated = await reviewUsecase.createReview(content, createdAt, missionId, userId);
-                res.status(201).send(reviewCreated);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-    
-        app.get("/comments/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const review = await reviewUsecase.getReview(id);
-                if (!review) {
-                    res.status(404).send({ error: "Review not found" });
-                    return;
-                }
-                res.status(200).send(review);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.put("/comments/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            const validation = reviewValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            const loginAdminRequest = validationResult.value;
+
+            const admin = await AppDataSource.getRepository(User).findOne({
+                where: {
+                    email: loginAdminRequest.email,
+                    isDeleted: false
+                },
+                relations: ["status"]
+            });
+
+            if (!admin) {
+                res.status(400).json({ error: "email or password not valid" });
                 return;
             }
-    
-            const { content }: ReviewRequest = validation.value;
-            try {
-                const review = await reviewUsecase.updateReview(id, { content });
-                if (!review) {
-                    res.status(404).send({ error: "Review not found" });
-                    return;
-                }
-                res.status(200).send(review);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
 
-        app.delete("/comments/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const success = await reviewUsecase.deleteReview(id);
-                if (!success) {
-                    res.status(404).send({ error: "Review not found" });
-                    return;
-                }
-                res.status(204).send();
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-
-
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        app.post("/compliances", async (req: Request, res: Response) => {
-            const validation = complianceValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+            const isValid = await compare(loginAdminRequest.password, admin.password);
+            if (!isValid) {
+                res.status(400).json({ error: "email or password not valid" });
                 return;
             }
-    
-            const { description, status, userId, missionId }: ComplianceRequest = validation.value;
-            try {
-                const complianceCreated = await complianceUsecase.createCompliance(description, status, userId, missionId);
-                res.status(201).send(complianceCreated);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.get("/compliances/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const compliance = await complianceUsecase.getCompliance(id);
-                if (!compliance) {
-                    res.status(404).send({ error: "Compliance not found" });
-                    return;
-                }
-                res.status(200).send(compliance);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.put("/compliances/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            const validation = complianceValidation.validate(req.body);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+
+            const status = await AppDataSource.getRepository(Status).findOneBy({
+                id: admin.status.id
+            });
+
+            if (!status || (status && status.description != "ADMIN")) {
+                res.status(400).json({ error: "user not recognised" });
                 return;
             }
-    
-            const { description, status }: ComplianceRequest = validation.value;
-            try {
-                const compliance = await complianceUsecase.updateCompliance(id, { description, status });
-                if (!compliance) {
-                    res.status(404).send({ error: "Compliance not found" });
-                    return;
-                }
-                res.status(200).send(compliance);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-        app.delete("/compliances/:id", async (req: Request, res: Response) => {
-            const id = parseInt(req.params.id);
-            try {
-                const success = await complianceUsecase.deleteCompliance(id);
-                if (!success) {
-                    res.status(404).send({ error: "Compliance not found" });
-                    return;
-                }
-                res.status(204).send();
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
-            }
-        });
-    
-        app.get("/compliances", async (req: Request, res: Response) => {
-            const validation = listComplianceValidation.validate(req.query);
-            if (validation.error) {
-                res.status(400).send(generateValidationErrorMessage(validation.error.details));
+
+            const secret = process.env.JWT_SECRET ?? "NoNotThiss";
+            const token = sign({ adminId: admin.id, email: admin.email }, secret, { expiresIn: '1d' });
+            await AppDataSource.getRepository(Token).save({ token: token, user: admin });
+            res.status(200).json({ admin, token, message: "authenticated ✅" });
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
+    app.patch("/admins/:id", adminMiddleware, async (req: Request, res: Response) => {
+        const validation = updateUserValidation.validate({ ...req.body, ...req.params });
+
+        if (validation.error) {
+            res.status(400).json(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+        const updateUserRequest = validation.value;
+
+        try {
+            const userUsecase = new UserUsecase(AppDataSource);
+            const updatedUser = await userUsecase.updateAdmin(updateUserRequest.id, { ...updateUserRequest });
+            if (updatedUser === null) {
+                res.status(404).json({ "error": `user ${updateUserRequest.id} not found` });
                 return;
             }
-    
-            const { page = 1, limit = 10 }: ListComplianceRequest = validation.value;
-            try {
-                const result = await complianceUsecase.listCompliances({ page, limit });
-                res.status(200).send(result);
-            } catch (error) {
-                console.log(error);
-                res.status(500).send({ error: "Internal error" });
+            res.status(200).json(updatedUser);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/admins/:id", adminMiddleware, async (req: Request, res: Response) => {
+        try {
+            const validationResult = updateUserValidation.validate({ ...req.params, ...req.body });
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
             }
-        });
-    
+            const userProto = validationResult.value;
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOneBy({ id: userProto.id, isDeleted: false });
+            if (user === null) {
+                res.status(404).json({ "error": `user ${userProto.id} not found` });
+                return;
+            }
+            const isValid = await compare(userProto.actual_password, user.password);
+            if (!isValid) {
+                res.status(400).json({ error: "Actual password incorrect" });
+                return;
+            }
+            user.isDeleted = true;
+            const userDeleted = await userRepository.save(user);
+            res.status(200 ).json(userDeleted);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    // Benefactor Routes
+    app.post('/benefactor/signup', async (req: Request, res: Response) => {
+        try {
+            const validationResult = createOtherValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const createOtherRequest = validationResult.value;
+            const hashedPassword = await hash(createOtherRequest.password, 10);
+
+            const status = await AppDataSource.getRepository(Status)
+                .createQueryBuilder("status")
+                .where("status.description = :description", { description: "BENEFACTOR" })
+                .getOne();
+
+            if (!status) {
+                res.status(500).json({ error: "Status not found" });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const newUser = userRepository.create({
+                name: createOtherRequest.name,
+                email: createOtherRequest.email,
+                password: hashedPassword,
+                status: status
+            });
+
+            await userRepository.save(newUser);
+
+            res.status(201).json(newUser);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
+    app.post('/benefactor/login', async (req: Request, res: Response) => {
+        try {
+            const validationResult = loginOtherValidation.validate(req.body);
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details));
+                return;
+            }
+            const loginOtherRequest = validationResult.value;
+
+            const other = await AppDataSource.getRepository(User).findOne({
+                where: {
+                    email: loginOtherRequest.email,
+                    isDeleted: false
+                },
+                relations: ["status"]
+            });
+
+            if (!other) {
+                res.status(400).json({ error: "user not found" });
+                return;
+            }
+
+            const isValid = await compare(loginOtherRequest.password, other.password);
+            if (!isValid) {
+                res.status(400).json({ error: "email or password not valid" });
+                return;
+            }
+
+            const status = await AppDataSource.getRepository(Status).findOneBy({
+                id: other.status.id
+            });
+
+            if (!status || (status && status.description != "BENEFACTOR")) {
+                res.status(400).json({ error: "user not recognised" });
+                return;
+            }
+
+            const secret = process.env.JWT_SECRET ?? "NoNotThisss";
+            const token = sign({ otherId: other.id, email: other.email }, secret, { expiresIn: '1d' });
+            await AppDataSource.getRepository(Token).save({ token: token, user: other });
+            res.status(200).json({ other, token, message: "authenticated ✅" });
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ "error": "internal error retry later" });
+            return;
+        }
+    });
+
     
 
-    }
+
+    app.patch("/benefactors/:id", benefactorMiddleware, async (req: Request, res: Response) => {
+        const validation = updateUserValidation.validate({ ...req.body, ...req.params });
+
+        if (validation.error) {
+            res.status(400).json(generateValidationErrorMessage(validation.error.details));
+            return;
+        }
+        const updateUserRequest = validation.value;
+
+        try {
+            const userUsecase = new UserUsecase(AppDataSource);
+            const updatedUser = await userUsecase.updateBenefactor(updateUserRequest.id, { ...updateUserRequest });
+            if (updatedUser === null) {
+                res.status(404).json({ "error": `user ${updateUserRequest.id} not found` });
+                return;
+            }
+            res.status(200).json(updatedUser);
+        } catch (error) {
+            console.log(error);
+            res.status(500).json({ error: "Internal error" });
+        }
+    });
+
+    app.delete("/benefactors/:id",benefactorMiddleware,async (req: Request, res: Response) => {
+        try {
+            const validationResult = updateUserValidation.validate({...req.params,...req.body})
+
+            if (validationResult.error) {
+                res.status(400).json(generateValidationErrorMessage(validationResult.error.details))
+                return
+            }
+            const userProto = validationResult.value
+
+            const userRepository = AppDataSource.getRepository(User)
+            const user = await userRepository.findOneBy({ id: userProto.id,isDeleted: false })
+            if (user === null) {
+                res.status(404).json({ "error": `user ${userProto.id} not found` })
+                return
+            }
+            const isValid =await compare(userProto.actual_password,user.password)
+            if (!isValid) {
+            return "Actual password incorrect !!!";
+            }
+            user.isDeleted = true
+            const userDeleted = await userRepository.save(user);
+            res.status(200).json(userDeleted)
+        } catch (error) {
+            console.log(error)
+            res.status(500).json({ error: "Internal error" })
+        }
+    })
+}
