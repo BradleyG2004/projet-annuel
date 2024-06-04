@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 // creation de reponse
-export const createResponsevalidation = Joi.object<CreateResponseRequest>({
+export const createResponseValidation = Joi.object<CreateResponseRequest>({
   subject_id: Joi.number().integer().required(),
   user_id: Joi.number().integer().required(),
   content: Joi.string().min(1).max(1000).required()
@@ -32,7 +32,7 @@ export interface UpdateResponseRequest {
 }
 
 // suppression de reponse par id
-export const deleteResponseValidaton = Joi.object<DeleteResponseRequest>({
+export const deleteResponseValidation = Joi.object<DeleteResponseRequest>({
   id: Joi.number().integer().required()
 }).options ({ abortEarly: false});
 

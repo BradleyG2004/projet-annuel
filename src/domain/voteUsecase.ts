@@ -1,4 +1,5 @@
 import { DataSource } from "typeorm";
+import { Subject } from "../database/entities/subject";
 import { Vote } from "../database/entities/vote";
 
 export interface ListVotesFilter {

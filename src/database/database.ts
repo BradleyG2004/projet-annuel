@@ -4,11 +4,11 @@ import { DataSource } from "typeorm";
 export const AppDataSource = new DataSource({
     type: "mysql",
     host: "localhost",
-    port: 3306,
-    username: "your_username",
-    password: "your_password",
-    database: "your_database",
-    logging: true, 
+    port: 8889,
+    username: "root",
+    password: "root",
+    database: "companion",
+    logging: true,
     synchronize: true,
     entities: [
         "src/database/entities/*.ts"
@@ -16,5 +16,5 @@ export const AppDataSource = new DataSource({
     migrations: [
         "src/database/migrations/*.ts"
     ]
-    
+
 })

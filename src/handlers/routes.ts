@@ -18,7 +18,8 @@ import {
   CreateResponseRequest,
   GetResponseRequest,
   UpdateResponseRequest,
-  DeleteResponseRequest
+  DeleteResponseRequest,
+  deleteResponseValidation
 }from './validators/responseValidator';
 
 const router = Router();
@@ -41,13 +42,12 @@ router.delete('/votes/:id', validationMiddleware(deleteVoteValidation), (req, re
 
 // créer une reponse
 
-router.post('/respones', validationMiddleware (createResponseValidation), (req, res) =>{
-  res.send('Réponse créée');
+router.post('/responses', validationMiddleware (createResponseValidation), (req, res) =>{
+  res.status(200).send({message:'Réponse créée'});
 });
-
 //lire une reponse
 router.get('/responses/:id', validationMiddleware(getResponseValidation), (req, res) =>{
-  res.send('Reponse lue');
+  res.status(200).send({message:'Réponse lue'});
 });
 
 //mettre à jour une reponse
